@@ -7,14 +7,28 @@ module IntToUuid
     module_function
 
     def encode(value_or_id, namespace: 0)
-      raise NotImplementedError, "encode not yet implemented"
+      if value_or_id.is_a?(IntegerId)
+        id_obj = value_or_id
+      else
+        id_obj = IntegerId.new(value_or_id, namespace: namespace)
+      end
+
+      packed_id = [id_obj.value].pack("Q>")
+      packed_namespace = [id_obj.namespace].pack("N")
+
+      s = compute_seed(packed_id, packed_namespace)
+      encoded_id = xor_bytes(packed_id, xxh3(packed_namespace + s))
+      encoded_namespace = xor_bytes(packed_namespace, xxh3(s))
+
+      uuid_bytes = encoded_namespace[0..3] + encoded_id[0..1] + s[0..3] + encoded_id[2..7]
+      format_uuid(uuid_bytes)
     end
 
     def decode(uuid_string)
       raise NotImplementedError, "decode not yet implemented"
     end
 
-    private
+    module_function
 
     # XOR two equal-length binary strings byte-by-byte
     def xor_bytes(a, b)
