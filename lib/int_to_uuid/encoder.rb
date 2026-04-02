@@ -4,7 +4,7 @@ require "digest/xxhash"
 
 module IntToUuid
   module Encoder
-    module_function
+    extend self
 
     def encode(value_or_id, namespace: 0)
       if value_or_id.is_a?(IntegerId)
@@ -25,10 +25,31 @@ module IntToUuid
     end
 
     def decode(uuid_string)
-      raise NotImplementedError, "decode not yet implemented"
+      bytes = parse_uuid(uuid_string)
+      raise ArgumentError, "invalid UUIDv8 string: #{uuid_string.inspect}" if bytes.nil?
+
+      # UUID layout: encoded_namespace[0..3] | encoded_id[0..1] | seed[0..3] | encoded_id[2..7]
+      encoded_namespace = bytes[0..3]
+      encoded_id_hi     = bytes[4..5]
+      s                 = bytes[6..9]
+      encoded_id_lo     = bytes[10..15]
+
+      encoded_id = encoded_id_hi + encoded_id_lo
+
+      packed_namespace = xor_bytes(encoded_namespace, xxh3(s))
+      packed_id        = xor_bytes(encoded_id, xxh3(packed_namespace + s))
+
+      # Verify checksum: recompute seed and compare
+      expected_seed = compute_seed(packed_id, packed_namespace)
+      raise ArgumentError, "UUID checksum invalid: #{uuid_string.inspect}" unless expected_seed == s
+
+      id        = packed_id.unpack1("Q>")
+      namespace = packed_namespace.unpack1("N")
+
+      IntegerId.new(id, namespace: namespace)
     end
 
-    module_function
+    private
 
     # XOR two equal-length binary strings byte-by-byte
     def xor_bytes(a, b)
